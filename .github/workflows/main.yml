@@ -16,6 +16,7 @@ jobs:
       packages: write
       attestations: write
       id-token: write
+      security-events: write  # ✅ Ajouté pour SARIF upload
 
     steps:
       - name: Checkout repository
@@ -34,7 +35,46 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
-      - name: Build and push Docker image
+      # 🔨 Build l'image SANS push (pour scanner d'abord)
+      - name: Build Docker image (for scanning)
+        id: build
+        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        with:
+          context: .
+          push: false  # ⚠️ Ne pas push avant le scan
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          load: true  # ✅ Charge l'image localement
+
+      # 🔍 Scan Trivy - Format SARIF (pour GitHub Security)
+      - name: Run Trivy vulnerability scanner (SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.meta.outputs.tags }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      # 📊 Upload vers GitHub Security tab
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      # 🔍 Scan Trivy - Format Table (pour les logs)
+      - name: Run Trivy vulnerability scanner (Table)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.meta.outputs.tags }}
+          format: 'table'
+          exit-code: '1'  # ⚠️ Bloque le push si vulnérabilités trouvées
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      # 🚀 Push l'image SEULEMENT si le scan est OK
+      - name: Push Docker image
         id: push
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
@@ -49,14 +89,3 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
-
-      # Étape Trivy : scan de sécurité
-      - name: Scan image with Aqua Security Trivy
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          image-ref: 'docker.io/my-organization/my-app:${{ github.sha }}'
-          format: 'table'
-          exit-code: '1'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
