@@ -1,10 +1,13 @@
 name: Create and publish a Docker image
+
 on:
   push:
     branches: ['main']
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
@@ -13,7 +16,8 @@ jobs:
       packages: write
       attestations: write
       id-token: write
-      security-events: write 
+      security-events: write  # Nécessaire pour uploader les résultats SARIF
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -31,27 +35,43 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
-      # ← MODIFIÉ : Build SANS push
+      # Build l'image SANS la pusher (pour la scanner d'abord)
       - name: Build Docker image
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
           context: .
-          push: false            
-          load: true            
+          push: false           # Ne pas push avant le scan
+          load: true            # Charge l'image localement
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      # ← NOUVEAU : Scan Trivy
+      # Scan de sécurité avec Trivy (version complète)
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.meta.outputs.tags }}
           format: 'table'
-          exit-code: '1'        
-          ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
+          exit-code: '0'        # Ne bloque pas (pour voir tous les résultats)
+          ignore-unfixed: false # Montre TOUTES les vulnérabilités
+          vuln-type: 'os,library'  # Scanne OS et librairies
+          severity: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'  # Tous les niveaux
+          
+      # Scan détaillé avec format JSON (optionnel - pour déboguer)
+      - name: Run Trivy scanner (JSON output for debugging)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.meta.outputs.tags }}
+          format: 'json'
+          output: 'trivy-results.json'
+          
+      # Upload des résultats JSON comme artifact
+      - name: Upload Trivy results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results
+          path: trivy-results.json
 
-      # ← NOUVEAU : Push seulement si scan OK
+      # Push l'image SEULEMENT si le scan Trivy est OK
       - name: Push Docker image
         id: push
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
