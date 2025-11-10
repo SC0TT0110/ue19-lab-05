@@ -54,8 +54,7 @@ jobs:
           exit-code: '0'        # Ne bloque pas (pour voir tous les résultats)
           ignore-unfixed: false # Montre TOUTES les vulnérabilités
           vuln-type: 'os,library'  # Scanne OS et librairies
-          severity: HIGH,CRITICAL          
-      # Scan détaillé avec format JSON (optionnel - pour déboguer)
+          severity: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL' # Tous les niveaux      # Scan détaillé avec format JSON (optionnel - pour déboguer)
       - name: Run Trivy scanner (JSON output for debugging)
         uses: aquasecurity/trivy-action@master
         with:
